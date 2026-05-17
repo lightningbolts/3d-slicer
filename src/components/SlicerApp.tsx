@@ -46,7 +46,9 @@ export function SlicerApp() {
   const appMainRef = useRef<HTMLElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const viewModeRef = useRef(viewMode);
-  viewModeRef.current = viewMode;
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  });
   const slicePanelRef = useRef<HTMLDivElement>(null);
   const sidebarGrabOffset = useRef(0);
   const sliceGrabOffset = useRef(0);

@@ -28,13 +28,16 @@ export function useEdgeResize({
   onDragEnd,
 }: UseEdgeResizeOptions) {
   const axisRef = useRef(axis);
-  axisRef.current = axis;
   const draggingRef = useRef(false);
   const handleRef = useRef<HTMLDivElement | null>(null);
   const onMoveRef = useRef(onMove);
   const onDragEndRef = useRef(onDragEnd);
-  onMoveRef.current = onMove;
-  onDragEndRef.current = onDragEnd;
+
+  useEffect(() => {
+    axisRef.current = axis;
+    onMoveRef.current = onMove;
+    onDragEndRef.current = onDragEnd;
+  });
 
   useEffect(() => {
     return () => clearResizeDragState(handleRef.current);

@@ -76,7 +76,7 @@ export function connectSegmentsToContours(
     if (visited.has(startIdx)) continue;
 
     const chain: Vec2[] = [];
-    let currentSeg = segments[startIdx]!;
+    const currentSeg = segments[startIdx]!;
     visited.add(startIdx);
     chain.push(currentSeg.a, currentSeg.b);
 
