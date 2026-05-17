@@ -1,5 +1,6 @@
 import { BufferGeometry, Matrix4 } from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { validateGeometry, validateStlBuffer } from './meshValidation';
 import { bufferToRawStlView } from './stlRawContent';
 
 export interface LoadedStl {
@@ -15,6 +16,11 @@ export interface LoadedStl {
  */
 export async function loadStlFromFile(file: File): Promise<LoadedStl> {
   const buffer = await file.arrayBuffer();
+  const bufferError = validateStlBuffer(buffer);
+  if (bufferError) {
+    throw new Error(bufferError);
+  }
+
   const loader = new STLLoader();
   let geometry = loader.parse(buffer);
 
@@ -33,6 +39,11 @@ export async function loadStlFromFile(file: File): Promise<LoadedStl> {
   geometry.applyMatrix4(matrix);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
+
+  const geometryError = validateGeometry(geometry);
+  if (geometryError) {
+    throw new Error(geometryError);
+  }
 
   return {
     geometry,

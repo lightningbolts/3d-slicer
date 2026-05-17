@@ -5,6 +5,7 @@ import {
   extractMeshData,
   type MeshData,
 } from '../geometry/meshData';
+import { validateMeshData } from '../geometry/meshValidation';
 import { sliceMeshDataAtZ } from '../geometry/planeIntersection';
 import type { Layer2D, SliceResult, SlicerParams } from '../types/slicer';
 import {
@@ -28,6 +29,11 @@ export function sliceMeshData(mesh: MeshData, params: SlicerParams): SliceResult
   const overlapError = validateLayerHeightRanges(params.layerHeightRanges);
   if (overlapError) {
     throw new SlicingError(overlapError);
+  }
+
+  const meshError = validateMeshData(mesh);
+  if (meshError) {
+    throw new SlicingError(meshError);
   }
 
   const bounds = computeMeshBoundsFromData(mesh);

@@ -75,10 +75,8 @@ export class PrusaMk4GCodeGenerator implements GCodeGenerator {
     for (const contour of layer.contours) {
       if (contour.points.length < 2) continue;
 
-      const pts = [...contour.points];
-      if (contour.closed && pts.length >= 2) {
-        pts.push(pts[0]!);
-      }
+      const pts = contour.points;
+      const closed = contour.closed && pts.length >= 2;
 
       const start = pts[0]!;
       lines.push(
@@ -90,9 +88,10 @@ export class PrusaMk4GCodeGenerator implements GCodeGenerator {
           travel * 60,
       );
 
-      for (let i = 1; i < pts.length; i++) {
+      const pointCount = closed ? pts.length + 1 : pts.length;
+      for (let i = 1; i < pointCount; i++) {
         const prev = pts[i - 1]!;
-        const curr = pts[i]!;
+        const curr = i < pts.length ? pts[i]! : pts[0]!;
         const len = segmentLength(prev, curr);
         const dE = extrusionDelta(
           len,

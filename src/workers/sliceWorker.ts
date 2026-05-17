@@ -26,9 +26,11 @@ self.onmessage = (event: MessageEvent<SliceWorkerRequest>) => {
     const message =
       err instanceof SlicingError
         ? err.message
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        : err instanceof RangeError
+          ? 'Mesh or slice result is too large to process. The STL may be corrupt — try re-exporting or repairing it.'
+          : err instanceof Error
+            ? err.message
+            : String(err);
     const response: SliceWorkerResponse = { requestId, ok: false, error: message };
     self.postMessage(response);
   }

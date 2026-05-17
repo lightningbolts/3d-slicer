@@ -63,7 +63,7 @@ export function connectSegmentsToContours(
       if (at) return c;
     }
     for (const c of candidates) {
-      if (c.segIdx === excludeSeg) continue;
+      if (c.segIdx === excludeSeg || visited.has(c.segIdx)) continue;
       const seg = segments[c.segIdx]!;
       if (dist2(seg.a, from) <= tol2 * 4 || dist2(seg.b, from) <= tol2 * 4) {
         return c;
