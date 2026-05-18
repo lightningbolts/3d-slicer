@@ -229,8 +229,74 @@ body.is-resizing {
   inset: 0;
 }
 
-.model-viewer canvas {
+.model-viewer-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.model-viewer-canvas canvas {
   display: block;
+}
+
+.viewer-toolbar {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: min(100% - 1.25rem, 16rem);
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.viewer-view-btn {
+  pointer-events: auto;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(24, 28, 37, 0.88);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.viewer-view-btn:hover {
+  color: var(--text);
+  border-color: var(--muted);
+  background: rgba(34, 40, 51, 0.95);
+}
+
+.viewer-view-btn--active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.viewer-hint {
+  position: absolute;
+  left: 0.65rem;
+  bottom: 0.55rem;
+  z-index: 2;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(15, 17, 23, 0.72);
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  pointer-events: none;
+  max-width: calc(100% - 1.25rem);
 }
 
 .slice-panel {

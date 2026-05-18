@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AmbientLight,
   AxesHelper,
@@ -16,57 +16,71 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { BufferGeometry } from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/addons/controls/OrbitControls.js';
+import {
+  applyViewPreset,
+  fitCameraToBox,
+  type ViewPresetId,
+} from '../view/cameraViews';
 
 interface ModelViewerProps {
   geometry: BufferGeometry | null;
 }
 
-/** Frame camera so `box` is centered in view (orbit target = bbox center). */
-function fitCameraToBox(
-  camera: PerspectiveCamera,
-  controls: OrbitControlsType,
-  box: Box3,
-): void {
-  const center = new Vector3();
-  const size = new Vector3();
-  box.getCenter(center);
-  box.getSize(size);
+const VIEW_PRESETS: { id: ViewPresetId; label: string; title: string }[] = [
+  { id: 'home', label: '⌂', title: 'Home / iso (H)' },
+  { id: 'top', label: 'T', title: 'Top — look down +Z' },
+  { id: 'bottom', label: 'B', title: 'Bottom — look up −Z' },
+  { id: 'front', label: 'F', title: 'Front — from −Y' },
+  { id: 'back', label: 'K', title: 'Back — from +Y' },
+  { id: 'left', label: 'L', title: 'Left — from −X' },
+  { id: 'right', label: 'R', title: 'Right — from +X' },
+];
 
-  const maxDim = Math.max(size.x, size.y, size.z, 1);
-  const fovRad = (camera.fov * Math.PI) / 180;
-  const distance =
-    (maxDim / (2 * Math.tan(fovRad / 2))) * Math.max(1, 1 / Math.max(camera.aspect, 0.25)) * 1.35;
-
-  controls.target.copy(center);
-  camera.position.set(
-    center.x + distance * 0.75,
-    center.y + distance * 0.75,
-    center.z + distance * 0.55,
-  );
-  camera.near = Math.max(0.1, distance / 200);
-  camera.far = Math.max(2000, distance * 20);
-  camera.updateProjectionMatrix();
-  controls.update();
-}
+const PRESET_KEYS: Record<string, ViewPresetId> = {
+  h: 'home',
+  t: 'top',
+  b: 'bottom',
+  f: 'front',
+  k: 'back',
+  l: 'left',
+  r: 'right',
+};
 
 export function ModelViewer({ geometry }: ModelViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const canvasHostRef = useRef<HTMLDivElement>(null);
   const meshRef = useRef<Mesh | null>(null);
   const sceneRef = useRef<Scene | null>(null);
   const cameraRef = useRef<PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControlsType | null>(null);
   const rendererRef = useRef<WebGLRenderer | null>(null);
   const helpersRef = useRef<{ grid: GridHelper; axes: AxesHelper } | null>(null);
+  const frameBoxRef = useRef<Box3 | null>(null);
+  const viewerFocusedRef = useRef(false);
+  const goToPresetRef = useRef<(preset: ViewPresetId) => void>(() => {});
+  const [activePreset, setActivePreset] = useState<ViewPresetId | null>('home');
+
+  const goToPreset = useCallback((preset: ViewPresetId) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const box = frameBoxRef.current;
+    if (!camera || !controls || !box) return;
+    applyViewPreset(camera, controls, box, preset);
+    setActivePreset(preset);
+  }, []);
+
+  goToPresetRef.current = goToPreset;
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const host = canvasHostRef.current;
+    if (!host) return;
 
     const scene = new Scene();
     scene.background = new Color(0x1a1d24);
     sceneRef.current = scene;
 
     const camera = new PerspectiveCamera(45, 1, 0.1, 5000);
+    camera.up.set(0, 0, 1);
     camera.position.set(120, 90, 90);
     cameraRef.current = camera;
 
@@ -76,12 +90,24 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     rendererRef.current = renderer;
 
     const canvas = renderer.domElement;
-    container.appendChild(canvas);
+    host.appendChild(canvas);
 
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.rotateSpeed = 0.9;
+    controls.screenSpacePanning = true;
     controls.target.set(0, 0, 30);
     controlsRef.current = controls;
+
+    const onControlStart = () => setActivePreset(null);
+    controls.addEventListener('start', onControlStart);
+
+    const onDblClick = (event: MouseEvent) => {
+      event.preventDefault();
+      goToPresetRef.current('home');
+    };
+    canvas.addEventListener('dblclick', onDblClick);
 
     scene.add(new AmbientLight(0xffffff, 0.55));
     const key = new DirectionalLight(0xffffff, 0.85);
@@ -99,8 +125,8 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     let frameId = 0;
     const tick = () => {
       frameId = requestAnimationFrame(tick);
-      const w = Math.max(1, container.clientWidth);
-      const h = Math.max(1, container.clientHeight);
+      const w = Math.max(1, host.clientWidth);
+      const h = Math.max(1, host.clientHeight);
       if (camera.aspect !== w / h) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
@@ -113,15 +139,18 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
 
     return () => {
       cancelAnimationFrame(frameId);
+      controls.removeEventListener('start', onControlStart);
+      canvas.removeEventListener('dblclick', onDblClick);
       controls.dispose();
       renderer.dispose();
-      container.removeChild(canvas);
+      host.removeChild(canvas);
       sceneRef.current = null;
       cameraRef.current = null;
       controlsRef.current = null;
       rendererRef.current = null;
       helpersRef.current = null;
       meshRef.current = null;
+      frameBoxRef.current = null;
     };
   }, []);
 
@@ -129,8 +158,8 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     const scene = sceneRef.current;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
-    const container = containerRef.current;
-    if (!scene || !camera || !controls || !container) return;
+    const host = canvasHostRef.current;
+    if (!scene || !camera || !controls || !host) return;
 
     if (meshRef.current) {
       scene.remove(meshRef.current);
@@ -139,7 +168,10 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
       meshRef.current = null;
     }
 
-    if (!geometry) return;
+    if (!geometry) {
+      frameBoxRef.current = null;
+      return;
+    }
 
     geometry.computeBoundingBox();
     const material = new MeshStandardMaterial({
@@ -153,9 +185,15 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     meshRef.current = mesh;
 
     const box = new Box3().setFromObject(mesh);
+    frameBoxRef.current = box.clone();
     const size = box.getSize(new Vector3());
     const maxDim = Math.max(size.x, size.y, size.z, 40);
     const gridSpan = Math.max(100, Math.ceil((maxDim * 2.2) / 50) * 50);
+
+    const orbitDistance =
+      Math.max(size.x, size.y, size.z, 1) * 1.5;
+    controls.minDistance = Math.max(5, orbitDistance * 0.05);
+    controls.maxDistance = Math.max(500, orbitDistance * 8);
 
     const helpers = helpersRef.current;
     if (helpers) {
@@ -174,15 +212,18 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     let cancelled = false;
     const frameOnce = () => {
       if (cancelled || !meshRef.current) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = host.clientWidth;
+      const h = host.clientHeight;
       if (w < 16 || h < 16) {
         requestAnimationFrame(frameOnce);
         return;
       }
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      fitCameraToBox(camera, controls, new Box3().setFromObject(meshRef.current));
+      const frameBox = new Box3().setFromObject(meshRef.current);
+      frameBoxRef.current = frameBox.clone();
+      fitCameraToBox(camera, controls, frameBox);
+      setActivePreset('home');
     };
     requestAnimationFrame(() => requestAnimationFrame(frameOnce));
 
@@ -191,5 +232,54 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     };
   }, [geometry]);
 
-  return <div ref={containerRef} className="model-viewer" />;
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!viewerFocusedRef.current) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const preset = PRESET_KEYS[event.key.toLowerCase()];
+      if (!preset) return;
+      event.preventDefault();
+      goToPreset(preset);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [goToPreset]);
+
+  return (
+    <div
+      ref={shellRef}
+      className="model-viewer"
+      onPointerEnter={() => {
+        viewerFocusedRef.current = true;
+      }}
+      onPointerLeave={() => {
+        viewerFocusedRef.current = false;
+      }}
+    >
+      <div ref={canvasHostRef} className="model-viewer-canvas" />
+      <div className="viewer-toolbar" role="toolbar" aria-label="Camera views">
+        {VIEW_PRESETS.map(({ id, label, title }) => (
+          <button
+            key={id}
+            type="button"
+            className={`viewer-view-btn${activePreset === id ? ' viewer-view-btn--active' : ''}`}
+            title={title}
+            aria-label={title}
+            aria-pressed={activePreset === id}
+            onClick={() => goToPreset(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="viewer-hint">
+        Drag orbit · Scroll zoom · Right-drag pan · Shift+drag pan · Double-click home
+      </p>
+    </div>
+  );
 }
+
