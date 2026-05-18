@@ -29,14 +29,10 @@ export class PrusaMk4GCodeGenerator implements GCodeGenerator {
     lines.push('M109 S' + settings.printTemperature + ' ; wait nozzle');
     lines.push('M190 S' + settings.bedTemperature + ' ; wait bed');
 
-    let totalE = 0;
     let firstLayer = true;
 
     for (const layer of slice.layers) {
-      this.emitLayer(lines, layer, settings, firstLayer, (delta) => {
-        totalE += delta;
-        return totalE;
-      });
+      this.emitLayer(lines, layer, settings, firstLayer);
 
       if (
         settings.pauseAtZ > 0 &&
@@ -63,7 +59,6 @@ export class PrusaMk4GCodeGenerator implements GCodeGenerator {
     layer: Layer2D,
     settings: GCodeGeneratorContext['settings'],
     firstLayer: boolean,
-    accumulateE: (delta: number) => number,
   ): void {
     const speed = firstLayer ? settings.firstLayerSpeed : settings.printSpeed;
     const travel = settings.travelSpeed;
@@ -99,14 +94,13 @@ export class PrusaMk4GCodeGenerator implements GCodeGenerator {
           settings.lineWidth,
           settings.filamentDiameter,
         );
-        const e = accumulateE(dE);
         lines.push(
           'G1 X' +
             formatNum(curr.x) +
             ' Y' +
             formatNum(curr.y) +
             ' E' +
-            formatNum(e, 5) +
+            formatNum(dE, 5) +
             ' F' +
             speed * 60,
         );
