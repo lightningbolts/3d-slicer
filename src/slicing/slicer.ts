@@ -13,6 +13,7 @@ import {
   validateLayerHeightRanges,
   LayerHeightEvaluationError,
 } from './layerHeight';
+import { createSliceProgressReporter } from './sliceProgress';
 
 export class SlicingError extends Error {
   constructor(message: string) {
@@ -25,7 +26,11 @@ export class SlicingError extends Error {
  * Main Z-plane slicing loop: march from Z=0 to model top,
  * intersect triangles, connect segments into perimeters.
  */
-export function sliceMeshData(mesh: MeshData, params: SlicerParams): SliceResult {
+export function sliceMeshData(
+  mesh: MeshData,
+  params: SlicerParams,
+  onProgress?: Parameters<typeof createSliceProgressReporter>[0],
+): SliceResult {
   const overlapError = validateLayerHeightRanges(params.layerHeightRanges);
   if (overlapError) {
     throw new SlicingError(overlapError);
@@ -50,6 +55,13 @@ export function sliceMeshData(mesh: MeshData, params: SlicerParams): SliceResult
   const maxLayers = 100_000;
   let count = 0;
 
+  const reportProgress = createSliceProgressReporter(
+    onProgress,
+    bounds,
+    zStart,
+    zEnd,
+  );
+
   while (z <= zEnd + 1e-6 && count < maxLayers) {
     let layerHeight: number;
     try {
@@ -68,9 +80,13 @@ export function sliceMeshData(mesh: MeshData, params: SlicerParams): SliceResult
       layers.push({ z, layerHeight, contours });
     }
 
+    reportProgress(z, layers.length);
+
     z += layerHeight;
     count++;
   }
+
+  reportProgress(zEnd, layers.length, true);
 
   return { layers, bounds };
 }

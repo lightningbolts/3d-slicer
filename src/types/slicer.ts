@@ -23,16 +23,27 @@ export interface Layer2D {
   contours: Contour2D[];
 }
 
+export interface SliceBounds {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+}
+
 export interface SliceResult {
   layers: Layer2D[];
-  bounds: {
-    minX: number;
-    minY: number;
-    minZ: number;
-    maxX: number;
-    maxY: number;
-    maxZ: number;
-  };
+  bounds: SliceBounds;
+}
+
+/** Lightweight progress tick — no layer geometry (avoids huge postMessage payloads). */
+export interface SliceProgress {
+  z: number;
+  bounds: SliceBounds;
+  layerCount: number;
+  /** 0–1 based on current Z vs model Z extent */
+  progress: number;
 }
 
 /** Static print parameters exposed in the UI. */

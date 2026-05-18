@@ -5,9 +5,15 @@ import {
   Box3,
   Color,
   DirectionalLight,
+  DoubleSide,
   GridHelper,
+  Group,
+  LineSegments,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
+  Plane,
+  PlaneGeometry,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -16,14 +22,26 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { BufferGeometry } from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/addons/controls/OrbitControls.js';
+import type { SliceBounds, SliceResult } from '../types/slicer';
 import {
   applyViewPreset,
   fitCameraToBox,
   type ViewPresetId,
 } from '../view/cameraViews';
+import {
+  buildSliceContourGroup,
+  planeCenterFromBounds,
+  planeSpanFromBounds,
+} from '../view/sliceContours3d';
 
 interface ModelViewerProps {
   geometry: BufferGeometry | null;
+  slice?: SliceResult | null;
+  sliceBounds?: SliceBounds | null;
+  clipZ?: number | null;
+  activeLayerIndex?: number;
+  slicing?: boolean;
+  sliceProgress?: number;
 }
 
 const VIEW_PRESETS: { id: ViewPresetId; label: string; title: string }[] = [
@@ -46,7 +64,26 @@ const PRESET_KEYS: Record<string, ViewPresetId> = {
   r: 'right',
 };
 
-export function ModelViewer({ geometry }: ModelViewerProps) {
+function disposeGroup(group: Group) {
+  group.traverse((obj) => {
+    if (obj instanceof Mesh || obj instanceof LineSegments) {
+      obj.geometry.dispose();
+      const mat = obj.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat.dispose();
+    }
+  });
+}
+
+export function ModelViewer({
+  geometry,
+  slice = null,
+  sliceBounds = null,
+  clipZ = null,
+  activeLayerIndex = 0,
+  slicing = false,
+  sliceProgress = 0,
+}: ModelViewerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const meshRef = useRef<Mesh | null>(null);
@@ -56,6 +93,10 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
   const rendererRef = useRef<WebGLRenderer | null>(null);
   const helpersRef = useRef<{ grid: GridHelper; axes: AxesHelper } | null>(null);
   const frameBoxRef = useRef<Box3 | null>(null);
+  const clipPlaneRef = useRef<Plane>(new Plane(new Vector3(0, 0, -1), 0));
+  const zPlaneMeshRef = useRef<Mesh | null>(null);
+  const planeCenterRef = useRef({ x: 0, y: 0 });
+  const contourGroupRef = useRef<Group | null>(null);
   const viewerFocusedRef = useRef(false);
   const goToPresetRef = useRef<(preset: ViewPresetId) => void>(() => {});
   const [activePreset, setActivePreset] = useState<ViewPresetId | null>('home');
@@ -87,6 +128,7 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     const renderer = new WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x1a1d24);
+    renderer.localClippingEnabled = true;
     rendererRef.current = renderer;
 
     const canvas = renderer.domElement;
@@ -114,7 +156,6 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     key.position.set(50, 80, 60);
     scene.add(key);
 
-    // Bed is XY at z = 0 (slicer uses Z-up).
     const grid = new GridHelper(200, 20, 0x3d4452, 0x2a2f3a);
     grid.rotation.x = Math.PI / 2;
     scene.add(grid);
@@ -151,6 +192,8 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
       helpersRef.current = null;
       meshRef.current = null;
       frameBoxRef.current = null;
+      zPlaneMeshRef.current = null;
+      contourGroupRef.current = null;
     };
   }, []);
 
@@ -179,6 +222,7 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
       metalness: 0.15,
       roughness: 0.45,
       flatShading: true,
+      clippingPlanes: [],
     });
     const mesh = new Mesh(geometry, material);
     scene.add(mesh);
@@ -190,8 +234,7 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
     const maxDim = Math.max(size.x, size.y, size.z, 40);
     const gridSpan = Math.max(100, Math.ceil((maxDim * 2.2) / 50) * 50);
 
-    const orbitDistance =
-      Math.max(size.x, size.y, size.z, 1) * 1.5;
+    const orbitDistance = Math.max(size.x, size.y, size.z, 1) * 1.5;
     controls.minDistance = Math.max(5, orbitDistance * 0.05);
     controls.maxDistance = Math.max(500, orbitDistance * 8);
 
@@ -233,6 +276,107 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
   }, [geometry]);
 
   useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (zPlaneMeshRef.current) {
+      scene.remove(zPlaneMeshRef.current);
+      zPlaneMeshRef.current.geometry.dispose();
+      (zPlaneMeshRef.current.material as MeshBasicMaterial).dispose();
+      zPlaneMeshRef.current = null;
+    }
+
+    if (!sliceBounds) return;
+
+    const span = planeSpanFromBounds(sliceBounds);
+    const center = planeCenterFromBounds(sliceBounds);
+    planeCenterRef.current = center;
+
+    const planeMat = new MeshBasicMaterial({
+      color: 0x5eead4,
+      transparent: true,
+      opacity: 0.16,
+      side: DoubleSide,
+      depthWrite: false,
+    });
+    const zPlane = new Mesh(new PlaneGeometry(span, span), planeMat);
+    zPlane.visible = false;
+    scene.add(zPlane);
+    zPlaneMeshRef.current = zPlane;
+
+    return () => {
+      if (zPlaneMeshRef.current) {
+        scene.remove(zPlaneMeshRef.current);
+        zPlaneMeshRef.current.geometry.dispose();
+        (zPlaneMeshRef.current.material as MeshBasicMaterial).dispose();
+        zPlaneMeshRef.current = null;
+      }
+    };
+  }, [sliceBounds]);
+
+  useEffect(() => {
+    const zPlane = zPlaneMeshRef.current;
+    const planeMat = zPlane?.material as MeshBasicMaterial | undefined;
+    if (planeMat) {
+      planeMat.opacity = slicing ? 0.22 : 0.14;
+    }
+  }, [slicing]);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    const clipPlane = clipPlaneRef.current;
+    const zPlane = zPlaneMeshRef.current;
+    const center = planeCenterRef.current;
+
+    if (mesh) {
+      const material = mesh.material as MeshStandardMaterial;
+      if (clipZ !== null) {
+        clipPlane.constant = clipZ;
+        material.clippingPlanes = [clipPlane];
+      } else {
+        material.clippingPlanes = [];
+      }
+      material.needsUpdate = true;
+    }
+
+    if (zPlane) {
+      if (clipZ !== null) {
+        zPlane.position.set(center.x, center.y, clipZ);
+        zPlane.visible = true;
+      } else {
+        zPlane.visible = false;
+      }
+    }
+  }, [clipZ]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (contourGroupRef.current) {
+      scene.remove(contourGroupRef.current);
+      disposeGroup(contourGroupRef.current);
+      contourGroupRef.current = null;
+    }
+
+    if (slicing || !slice || clipZ === null) return;
+
+    const contours = buildSliceContourGroup(slice.layers, activeLayerIndex);
+    if (contours.children.length > 0) {
+      scene.add(contours);
+      contourGroupRef.current = contours;
+    }
+
+    return () => {
+      if (contourGroupRef.current) {
+        scene.remove(contourGroupRef.current);
+        disposeGroup(contourGroupRef.current);
+        contourGroupRef.current = null;
+      }
+    };
+  }, [slice, activeLayerIndex, slicing, clipZ]);
+
+  useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
 
@@ -252,7 +396,7 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
   return (
     <div
       ref={shellRef}
-      className="model-viewer"
+      className={`model-viewer${slicing ? ' model-viewer--slicing' : ''}`}
       onPointerEnter={() => {
         viewerFocusedRef.current = true;
       }}
@@ -276,10 +420,18 @@ export function ModelViewer({ geometry }: ModelViewerProps) {
           </button>
         ))}
       </div>
+      {slicing && clipZ !== null && (
+        <div className="slicing-progress" aria-hidden>
+          <div
+            className="slicing-progress-bar"
+            style={{ width: `${Math.round(sliceProgress * 100)}%` }}
+          />
+        </div>
+      )}
       <p className="viewer-hint">
         Drag orbit · Scroll zoom · Right-drag pan · Shift+drag pan · Double-click home
+        {clipZ !== null ? ` · Z plane ${clipZ.toFixed(2)} mm` : ''}
       </p>
     </div>
   );
 }
-

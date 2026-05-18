@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BufferGeometry } from 'three';
-import { extractMeshData } from '../geometry/meshData';
+import { computeMeshBoundsFromData, extractMeshData } from '../geometry/meshData';
 import { loadStlFromFile } from '../geometry/stlLoader';
 import { runSliceInWorker, terminateSliceWorker } from '../slicing/runSliceInWorker';
 import {
   DEFAULT_PRINT_SETTINGS,
   type LayerHeightRange,
   type PrintSettings,
+  type SliceBounds,
+  type SliceProgress,
   type SliceResult,
 } from '../types/slicer';
 import { CodePanel } from './CodePanel';
@@ -31,6 +33,14 @@ export function SlicerApp() {
     [],
   );
   const [slice, setSlice] = useState<SliceResult | null>(null);
+  const [previewBounds, setPreviewBounds] = useState<SliceBounds | null>(null);
+  const [slicingZ, setSlicingZ] = useState<number | null>(null);
+  const [sliceProgress, setSliceProgress] = useState(0);
+  const [slicingLayerCount, setSlicingLayerCount] = useState(0);
+  const [isSlicing, setIsSlicing] = useState(false);
+  const progressRafRef = useRef(0);
+  const pendingProgressRef = useRef<SliceProgress | null>(null);
+  const lastStatusAtRef = useRef(0);
   const [activeLayerIndex, setActiveLayerIndex] = useState(0);
   const [gcode, setGcode] = useState<string | null>(null);
   const [stlRaw, setStlRaw] = useState<string | null>(null);
@@ -67,6 +77,11 @@ export function SlicerApp() {
     setBusy(true);
     setStatus('Loading STL…');
     setSlice(null);
+    setPreviewBounds(null);
+    setSlicingZ(null);
+    setSliceProgress(0);
+    setSlicingLayerCount(0);
+    setIsSlicing(false);
     setGcode(null);
     setStlRaw(null);
     setActiveLayerIndex(0);
@@ -95,12 +110,45 @@ export function SlicerApp() {
     }
 
     setBusy(true);
-    setStatus('Slicing… (running in background)');
+    setIsSlicing(true);
+    setSlice(null);
+    setGcode(null);
+    setActiveLayerIndex(0);
+    setSliceProgress(0);
 
     const mesh = extractMeshData(geometry);
+    const bounds = computeMeshBoundsFromData(mesh);
+    setPreviewBounds(bounds);
+    setSlicingZ(Math.max(0, bounds.minZ));
+    setSlicingLayerCount(0);
+    setStatus('Slicing… building layers from the bed up');
+
     const params = { ...settings, layerHeightRanges };
 
-    void runSliceInWorker(mesh, params, settings)
+    const flushProgress = () => {
+      progressRafRef.current = 0;
+      const progress = pendingProgressRef.current;
+      if (!progress) return;
+
+      setSlicingZ(progress.z);
+      setSliceProgress(progress.progress);
+      setSlicingLayerCount(progress.layerCount);
+
+      const now = performance.now();
+      if (now - lastStatusAtRef.current >= 500) {
+        lastStatusAtRef.current = now;
+        setStatus(
+          `Slicing… ${Math.round(progress.progress * 100)}% · Z=${progress.z.toFixed(1)} mm · ${progress.layerCount} layer${progress.layerCount === 1 ? '' : 's'}`,
+        );
+      }
+    };
+
+    void runSliceInWorker(mesh, params, settings, (progress) => {
+      pendingProgressRef.current = progress;
+      if (!progressRafRef.current) {
+        progressRafRef.current = requestAnimationFrame(flushProgress);
+      }
+    })
       .then(({ slice: result, gcode: code }) => {
         setSlice(result);
         setActiveLayerIndex(0);
@@ -116,7 +164,16 @@ export function SlicerApp() {
         setGcode(null);
       })
       .finally(() => {
+        if (progressRafRef.current) {
+          cancelAnimationFrame(progressRafRef.current);
+          progressRafRef.current = 0;
+        }
+        pendingProgressRef.current = null;
         setBusy(false);
+        setIsSlicing(false);
+        setSlicingZ(null);
+        setSliceProgress(0);
+        setSlicingLayerCount(0);
       });
   }, [geometry, settings, layerHeightRanges]);
 
@@ -137,6 +194,9 @@ export function SlicerApp() {
     if (!slice || layerCount === 0) return null;
     return slice.layers[activeLayerIndex]?.z ?? null;
   }, [slice, activeLayerIndex, layerCount]);
+
+  const clipZ = isSlicing ? slicingZ : activeZ;
+  const viewerBounds = slice?.bounds ?? previewBounds;
 
   const clampSidebar = useCallback((w: number) => {
     const max = Math.min(SIDEBAR_MAX, window.innerWidth * 0.45);
@@ -357,7 +417,15 @@ export function SlicerApp() {
           {previewActive && (
             <div ref={viewportRef} className="viewport">
               <div className="model-viewer-wrap">
-                <ModelViewer geometry={geometry} />
+                <ModelViewer
+                  geometry={geometry}
+                  slice={slice}
+                  sliceBounds={viewerBounds}
+                  clipZ={clipZ}
+                  activeLayerIndex={activeLayerIndex}
+                  slicing={isSlicing}
+                  sliceProgress={sliceProgress}
+                />
               </div>
               <ResizeEdge
                 axis="vertical"
@@ -373,18 +441,34 @@ export function SlicerApp() {
               >
                 <SlicePreview
                   slice={slice}
+                  previewBounds={viewerBounds}
                   activeLayerIndex={activeLayerIndex}
+                  slicing={isSlicing}
+                  sliceProgress={sliceProgress}
+                  clipZ={clipZ}
                 />
-                {layerCount > 0 && (
+                {(layerCount > 0 || isSlicing) && (
                   <div className="layer-controls">
                     <label>
-                      Layer {activeLayerIndex + 1} / {layerCount}
-                      {activeZ !== null && ` · Z=${activeZ.toFixed(2)} mm`}
+                      {isSlicing ? (
+                        <>
+                          Slicing… {Math.round(sliceProgress * 100)}%
+                          {clipZ !== null && ` · Z=${clipZ.toFixed(2)} mm`}
+                          {slicingLayerCount > 0 &&
+                            ` · ${slicingLayerCount} layer${slicingLayerCount === 1 ? '' : 's'}`}
+                        </>
+                      ) : (
+                        <>
+                          Layer {activeLayerIndex + 1} / {layerCount}
+                          {activeZ !== null && ` · Z=${activeZ.toFixed(2)} mm`}
+                        </>
+                      )}
                       <input
                         type="range"
                         min={0}
                         max={layerSliderMax}
                         value={activeLayerIndex}
+                        disabled={isSlicing}
                         onChange={(e) =>
                           setActiveLayerIndex(Number(e.target.value))
                         }

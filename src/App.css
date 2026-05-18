@@ -283,6 +283,51 @@ body.is-resizing {
   background: var(--accent);
 }
 
+.slicing-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 3;
+  background: rgba(15, 17, 23, 0.5);
+  pointer-events: none;
+}
+
+.slicing-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width 0.12s ease-out;
+}
+
+.slice-preview-slicing {
+  position: absolute;
+  left: 0.65rem;
+  right: 0.65rem;
+  bottom: 0.55rem;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.slice-preview-slicing-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  color: var(--success);
+}
+
+.slice-preview-slicing-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(46, 53, 68, 0.9);
+  overflow: hidden;
+}
+
+.slice-preview-slicing-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width 0.12s ease-out;
+}
+
 .viewer-hint {
   position: absolute;
   left: 0.65rem;

@@ -1,6 +1,7 @@
 import type { MeshData } from '../geometry/meshData';
-import type { PrintSettings, SlicerParams, SliceResult } from '../types/slicer';
+import type { PrintSettings, SlicerParams, SliceProgress, SliceResult } from '../types/slicer';
 import type {
+  SliceWorkerProgressMessage,
   SliceWorkerRequest,
   SliceWorkerResponse,
 } from '../workers/sliceWorker';
@@ -22,11 +23,18 @@ function getWorker(): Worker {
   return worker;
 }
 
+function isProgressMessage(
+  data: SliceWorkerResponse,
+): data is SliceWorkerProgressMessage {
+  return 'type' in data && data.type === 'progress';
+}
+
 /** Run slicing + G-code generation off the main thread. */
 export function runSliceInWorker(
   mesh: MeshData,
   params: SlicerParams,
   settings: PrintSettings,
+  onProgress?: (progress: SliceProgress) => void,
 ): Promise<SliceJobResult> {
   const requestId = ++nextRequestId;
   const w = getWorker();
@@ -41,6 +49,12 @@ export function runSliceInWorker(
   return new Promise((resolve, reject) => {
     const onMessage = (event: MessageEvent<SliceWorkerResponse>) => {
       if (event.data.requestId !== requestId) return;
+
+      if (isProgressMessage(event.data)) {
+        onProgress?.(event.data.progress);
+        return;
+      }
+
       w.removeEventListener('message', onMessage);
       w.removeEventListener('error', onError);
 
