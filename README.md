@@ -1,5 +1,7 @@
 # 3D Slicer
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lightningbolts/3d-slicer)
+
 A browser-based 3D print slicer that turns STL meshes into layer contours and Prusa MK4 G-code. Load a model, tune print settings, slice in a background worker, preview layers in 2D and 3D, then download the generated G-code.
 
 ## Features
