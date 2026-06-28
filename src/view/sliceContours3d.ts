@@ -5,9 +5,29 @@ import {
   LineBasicMaterial,
   LineSegments,
 } from 'three';
-import type { Layer2D, SliceBounds } from '../types/slicer';
+import type { Layer2D, Segment2D, SliceBounds } from '../types/slicer';
 
-const ACTIVE_COLOR = 0x5eead4;
+const PERIMETER_COLOR = 0x5eead4;
+const INFILL_COLOR = 0xf97316;
+
+function segmentsToLineSegments(
+  segments: Segment2D[],
+  z: number,
+  color: number,
+): LineSegments | null {
+  const positions: number[] = [];
+
+  for (const seg of segments) {
+    positions.push(seg.a.x, seg.a.y, z, seg.b.x, seg.b.y, z);
+  }
+
+  if (positions.length === 0) return null;
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  const material = new LineBasicMaterial({ color });
+  return new LineSegments(geometry, material);
+}
 
 function layerToLineSegments(layer: Layer2D, color: number): LineSegments | null {
   const positions: number[] = [];
@@ -47,8 +67,13 @@ export function buildSliceContourGroup(
   const layer = layers[activeLayerIndex] ?? layers[layers.length - 1];
   if (!layer) return group;
 
-  const lines = layerToLineSegments(layer, ACTIVE_COLOR);
-  if (lines) group.add(lines);
+  const perimeterLines = layerToLineSegments(layer, PERIMETER_COLOR);
+  if (perimeterLines) group.add(perimeterLines);
+
+  if (layer.infill && layer.infill.length > 0) {
+    const infillLines = segmentsToLineSegments(layer.infill, layer.z, INFILL_COLOR);
+    if (infillLines) group.add(infillLines);
+  }
 
   return group;
 }

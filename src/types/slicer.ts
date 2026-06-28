@@ -21,6 +21,8 @@ export interface Layer2D {
   z: number;
   layerHeight: number;
   contours: Contour2D[];
+  /** Clipped rectilinear infill segments inside perimeters. */
+  infill?: Segment2D[];
 }
 
 export interface SliceBounds {
@@ -57,6 +59,8 @@ export interface PrintSettings {
   printSpeed: number;
   travelSpeed: number;
   firstLayerSpeed: number;
+  /** 0–100; rectilinear infill density. */
+  infillDensity: number;
 }
 
 /** Dynamic layer height override for a Z range. */
@@ -82,4 +86,5 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   printSpeed: 60,
   travelSpeed: 120,
   firstLayerSpeed: 30,
+  infillDensity: 20,
 };

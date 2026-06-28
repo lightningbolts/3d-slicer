@@ -14,6 +14,24 @@ function isPanelResizing(): boolean {
   return document.body.classList.contains('is-resizing');
 }
 
+function drawInfillSegments(
+  ctx: CanvasRenderingContext2D,
+  segments: { a: { x: number; y: number }; b: { x: number; y: number } }[],
+  toScreen: (x: number, y: number) => { sx: number; sy: number },
+) {
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 1;
+
+  for (const seg of segments) {
+    const a = toScreen(seg.a.x, seg.a.y);
+    const b = toScreen(seg.b.x, seg.b.y);
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.stroke();
+  }
+}
+
 function drawLayerContours(
   ctx: CanvasRenderingContext2D,
   layer: Layer2D,
@@ -133,6 +151,9 @@ export function SlicePreview({
       if (!slicing && slice) {
         const layer = slice.layers[activeLayerIndex];
         if (layer) {
+          if (layer.infill && layer.infill.length > 0) {
+            drawInfillSegments(ctx, layer.infill, toScreen);
+          }
           drawLayerContours(ctx, layer, toScreen);
         }
       }

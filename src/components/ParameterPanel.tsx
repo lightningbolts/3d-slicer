@@ -102,6 +102,19 @@ export function ParameterPanel({
             onChange={(e) => update('lineWidth', Number(e.target.value))}
           />
         </label>
+
+        <label>
+          Infill density (%)
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={5}
+            value={settings.infillDensity}
+            onChange={(e) => update('infillDensity', Number(e.target.value))}
+          />
+          <span className="hint">0 = perimeters only</span>
+        </label>
       </div>
 
       <h3>Dynamic layer height</h3>
