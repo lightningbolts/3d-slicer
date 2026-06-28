@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify": "tsx scripts/verify-infill.ts"
   },
   "dependencies": {
     "clipper-lib": "^6.4.2",
@@ -33,6 +34,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
+    "tsx": "^4.21.0",
     "vite": "^8.0.12"
   }
 }

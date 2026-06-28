@@ -98,16 +98,18 @@ export function generateRectilinearInfill(
     ];
 
     const clipper = new ClipperLib.Clipper();
-    clipper.AddPaths(subjectPaths, ClipperLib.PolyType.ptSubject, true);
-    clipper.AddPath(linePath, ClipperLib.PolyType.ptClip, false);
+    clipper.AddPath(linePath, ClipperLib.PolyType.ptSubject, false);
+    clipper.AddPaths(subjectPaths, ClipperLib.PolyType.ptClip, true);
 
-    const solution: ClipperLib.Paths = [];
+    const polyTree = new ClipperLib.PolyTree();
     clipper.Execute(
       ClipperLib.ClipType.ctIntersection,
-      solution,
+      polyTree,
       ClipperLib.PolyFillType.pftNonZero,
       ClipperLib.PolyFillType.pftNonZero,
     );
+
+    const solution = ClipperLib.Clipper.OpenPathsFromPolyTree(polyTree);
 
     for (const path of solution) {
       if (path.length < 2) continue;
